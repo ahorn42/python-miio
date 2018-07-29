@@ -1,9 +1,12 @@
 from unittest import TestCase
+
+import pytest
+
 from miio import ChuangmiPlug
 from miio.chuangmi_plug import (ChuangmiPlugStatus, MODEL_CHUANGMI_PLUG_V1,
-                                MODEL_CHUANGMI_PLUG_V3, MODEL_CHUANGMI_PLUG_M1)
+                                MODEL_CHUANGMI_PLUG_V3,
+                                MODEL_CHUANGMI_PLUG_M1, )
 from .dummies import DummyDevice
-import pytest
 
 
 class DummyChuangmiPlugV1(DummyDevice, ChuangmiPlug):
@@ -141,7 +144,7 @@ class TestChuangmiPlugV3(TestCase):
     def test_status(self):
         self.device._reset_state()
 
-        load_power = self.device._get_load_power().pop(0)
+        load_power = float(self.device._get_load_power().pop(0) * 0.01)
 
         start_state_extended = self.device.start_state.copy()
         start_state_extended['load_power'] = load_power

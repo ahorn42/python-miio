@@ -1,16 +1,17 @@
 # -*- coding: UTF-8 -*-
-import logging
-import click
 import ast
+import logging
 import sys
 from typing import Any  # noqa: F401
-from miio.click_common import (ExceptionHandlerGroup, validate_ip,
-                               validate_token)
-import miio  # noqa: E402
 
+import click
+
+import miio  # noqa: E402
+from miio.click_common import (ExceptionHandlerGroup, validate_ip,
+                               validate_token, )
 
 _LOGGER = logging.getLogger(__name__)
-pass_dev = click.make_pass_decorator(miio.Plug)
+pass_dev = click.make_pass_decorator(miio.ChuangmiPlug)
 
 
 @click.group(invoke_without_command=True, cls=ExceptionHandlerGroup)
@@ -34,7 +35,7 @@ def cli(ctx, ip: str, token: str, debug: int):
         click.echo("You have to give ip and token!")
         sys.exit(-1)
 
-    dev = miio.Plug(ip, token, debug)
+    dev = miio.ChuangmiPlug(ip, token, debug)
     _LOGGER.debug("Connecting to %s with token %s", ip, token)
 
     ctx.obj = dev
@@ -46,12 +47,12 @@ def cli(ctx, ip: str, token: str, debug: int):
 @cli.command()
 def discover():
     """Search for plugs in the network."""
-    miio.Plug.discover()
+    miio.ChuangmiPlug.discover()
 
 
 @cli.command()
 @pass_dev
-def status(dev: miio.Plug):
+def status(dev: miio.ChuangmiPlug):
     """Returns the state information."""
     res = dev.status()
     if not res:
@@ -63,14 +64,14 @@ def status(dev: miio.Plug):
 
 @cli.command()
 @pass_dev
-def on(dev: miio.Plug):
+def on(dev: miio.ChuangmiPlug):
     """Power on."""
     click.echo("Power on: %s" % dev.on())
 
 
 @cli.command()
 @pass_dev
-def off(dev: miio.Plug):
+def off(dev: miio.ChuangmiPlug):
     """Power off."""
     click.echo("Power off: %s" % dev.off())
 
@@ -79,7 +80,7 @@ def off(dev: miio.Plug):
 @click.argument('cmd', required=True)
 @click.argument('parameters', required=False)
 @pass_dev
-def raw_command(dev: miio.Plug, cmd, parameters):
+def raw_command(dev: miio.ChuangmiPlug, cmd, parameters):
     """Run a raw command."""
     params = []  # type: Any
     if parameters:

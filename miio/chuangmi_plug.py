@@ -1,6 +1,10 @@
 import logging
-from typing import Dict, Any, Optional
 from collections import defaultdict
+from typing import Dict, Any, Optional
+
+import click
+
+from .click_common import command, format_output
 from .device import Device
 from .utils import deprecated
 
@@ -57,10 +61,10 @@ class ChuangmiPlugStatus:
         return None
 
     @property
-    def load_power(self) -> Optional[int]:
+    def load_power(self) -> Optional[float]:
         """Current power load, if available."""
         if "load_power" in self.data and self.data["load_power"] is not None:
-            return self.data["load_power"]
+            return float(self.data["load_power"])
         return None
 
     @property
@@ -84,6 +88,9 @@ class ChuangmiPlugStatus:
              self.wifi_led)
         return s
 
+    def __json__(self):
+        return self.data
+
 
 class ChuangmiPlug(Device):
     """Main class representing the Chuangmi Plug V1 and V3."""
@@ -98,9 +105,18 @@ class ChuangmiPlug(Device):
         else:
             self.model = MODEL_CHUANGMI_PLUG_M1
 
+    @command(
+        default_output=format_output(
+            "",
+            "Power: {result.power}\n"
+            "USB Power: {result.usb_power}\n"
+            "Temperature: {result.temperature} °C\n"
+            "Load power: {result.load_power}\n"
+            "WiFi LED: {result.wifi_led}\n")
+    )
     def status(self) -> ChuangmiPlugStatus:
         """Retrieve properties."""
-        properties = AVAILABLE_PROPERTIES[self.model]
+        properties = AVAILABLE_PROPERTIES[self.model].copy()
         values = self.send(
             "get_prop",
             properties
@@ -118,11 +134,14 @@ class ChuangmiPlug(Device):
             load_power = self.send("get_power", [])  # Response: [300]
             if len(load_power) == 1:
                 properties.append('load_power')
-                values.append(load_power[0])
+                values.append(load_power[0] * 0.01)
 
         return ChuangmiPlugStatus(
             defaultdict(lambda: None, zip(properties, values)))
 
+    @command(
+        default_output = format_output("Powering on"),
+    )
     def on(self):
         """Power on."""
         if self.model == MODEL_CHUANGMI_PLUG_V1:
@@ -130,6 +149,9 @@ class ChuangmiPlug(Device):
 
         return self.send("set_power", ["on"])
 
+    @command(
+        default_output = format_output("Powering off"),
+    )
     def off(self):
         """Power off."""
         if self.model == MODEL_CHUANGMI_PLUG_V1:
@@ -137,14 +159,27 @@ class ChuangmiPlug(Device):
 
         return self.send("set_power", ["off"])
 
+    @command(
+        default_output = format_output("Powering USB on"),
+    )
     def usb_on(self):
         """Power on."""
         return self.send("set_usb_on", [])
 
+    @command(
+        default_output = format_output("Powering USB off"),
+    )
     def usb_off(self):
         """Power off."""
         return self.send("set_usb_off", [])
 
+    @command(
+        click.argument("wifi_led", type=bool),
+        default_output=format_output(
+            lambda wifi_led: "Turning on WiFi LED"
+            if wifi_led else "Turning off WiFi LED"
+        )
+    )
     def set_wifi_led(self, led: bool):
         """Set the wifi led on/off."""
         if led:

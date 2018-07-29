@@ -1,6 +1,17 @@
-from .device import Device
 import enum
+import logging
 from typing import Optional
+
+import click
+
+from .click_common import command, format_output, EnumType
+from .device import Device, DeviceException
+
+_LOGGER = logging.getLogger(__name__)
+
+
+class AirConditioningCompanionException(DeviceException):
+    pass
 
 
 class OperationMode(enum.Enum):
@@ -21,6 +32,7 @@ class FanSpeed(enum.Enum):
 class SwingMode(enum.Enum):
     On = 0
     Off = 1
+    Unknown = 2
 
 
 class Power(enum.Enum):
@@ -30,7 +42,7 @@ class Power(enum.Enum):
 
 class Led(enum.Enum):
     On = '0'
-    Off = 'a'
+    Off = 'A'
 
 
 STORAGE_SLOT_ID = 30
@@ -91,19 +103,75 @@ class AirConditioningCompanionStatus:
         return int(self.data[2])
 
     @property
-    def air_condition_model(self) -> str:
+    def air_condition_model(self) -> bytes:
         """Model of the air conditioner."""
-        return str(self.data[0])
+        return bytes.fromhex(self.data[0])
+
+    @property
+    def model_format(self) -> int:
+        """Version number of the model format."""
+        return self.air_condition_model[0]
+
+    @property
+    def device_type(self) -> int:
+        """Device type identifier."""
+        return self.air_condition_model[1]
+
+    @property
+    def air_condition_brand(self) -> int:
+        """
+        Brand of the air conditioner.
+
+        Known brand ids (int) are 0182, 0097, 0037, 0202, 02782, 0197, 0192.
+        """
+        return int(self.air_condition_model[2:4].hex())
+
+    @property
+    def air_condition_remote(self) -> int:
+        """
+        Known remote ids (int):
+
+        80111111, 80111112 (brand: 182)
+        80222221 (brand: 97)
+        80333331 (brand: 37)
+        80444441 (brand: 202)
+        80555551 (brand: 2782)
+        80777771 (brand: 197)
+        80666661 (brand: 192)
+
+        """
+        return int(self.air_condition_model[4:8].hex())
+
+    @property
+    def state_format(self) -> int:
+        """
+        Version number of the state format.
+
+        Known values (int) are: 01, 02, 03
+        """
+        return int(self.air_condition_model[8])
+
+    @property
+    def air_condition_configuration(self) -> int:
+        return self.data[1][2:10]
 
     @property
     def power(self) -> str:
         """Current power state."""
-        return 'on' if (int(self.data[1][2:3]) == Power.On.value) else 'off'
+        return 'on' if int(self.data[1][2:3]) == Power.On.value else 'off'
 
     @property
-    def led(self) -> str:
+    def led(self) -> Optional[bool]:
         """Current LED state."""
-        return 'on' if (int(self.data[1][8:9]) == Led.On.value) else 'off'
+        state = self.data[1][8:9]
+        if state == Led.On.value:
+            return True
+
+        if state == Led.Off.value:
+            return False
+
+        _LOGGER.info("Unsupported LED state: %s", state)
+        return None
 
     @property
     def is_on(self) -> bool:
@@ -150,6 +218,12 @@ class AirConditioningCompanionStatus:
             "power=%s, " \
             "load_power=%s, " \
             "air_condition_model=%s, " \
+            "model_format=%s, " \
+            "device_type=%s," \
+            "air_condition_brand=%s," \
+            "air_condition_remote=%s," \
+            "state_format=%s," \
+            "air_condition_configuration=%s," \
             "led=%s, " \
             "target_temperature=%s, " \
             "swing_mode=%s, " \
@@ -157,7 +231,13 @@ class AirConditioningCompanionStatus:
             "mode=%s>" % \
             (self.power,
              self.load_power,
-             self.air_condition_model,
+             self.air_condition_model.hex(),
+             self.model_format,
+             self.device_type,
+             self.air_condition_brand,
+             self.air_condition_remote,
+             self.state_format,
+             self.air_condition_configuration,
              self.led,
              self.target_temperature,
              self.swing_mode,
@@ -165,50 +245,132 @@ class AirConditioningCompanionStatus:
              self.mode)
         return s
 
+    def __json__(self):
+        return self.data
+
 
 class AirConditioningCompanion(Device):
     """Main class representing Xiaomi Air Conditioning Companion."""
 
+    @command(
+        default_output=format_output(
+            "",
+            "Power: {result.power}\n"
+            "Load power: {result.load_power}\n"
+            "Air Condition model: {result.air_condition_model}\n"
+            "LED: {result.led}\n"
+            "Target temperature: {result.target_temperature} °C\n"
+            "Swing mode: {result.swing_mode}\n"
+            "Fan speed: {result.fan_speed}\n"
+            "Mode: {result.mode}\n"
+        )
+    )
     def status(self) -> AirConditioningCompanionStatus:
         """Return device status."""
         status = self.send("get_model_and_state", [])
         return AirConditioningCompanionStatus(status)
 
+    @command(
+        default_output=format_output("Powering the air condition on"),
+    )
     def on(self):
         """Turn the air condition on by infrared."""
         return self.send("set_power", ["on"])
 
+    @command(
+        default_output=format_output("Powering the air condition off"),
+    )
     def off(self):
-        """Turn the air condition off by infared."""
+        """Turn the air condition off by infrared."""
         return self.send("set_power", ["off"])
 
+    @command(
+        click.argument("slot", type=int),
+        default_output=format_output(
+            "Learning infrared command into storage slot {slot}")
+    )
     def learn(self, slot: int=STORAGE_SLOT_ID):
         """Learn an infrared command."""
         return self.send("start_ir_learn", [slot])
 
+    @command(
+        default_output=format_output("Reading learned infrared commands")
+    )
     def learn_result(self):
         """Read the learned command."""
         return self.send("get_ir_learn_result", [])
 
+    @command(
+        click.argument("slot", type=int),
+        default_output=format_output(
+            "Learning infrared command into storage slot {slot} stopped")
+    )
     def learn_stop(self, slot: int=STORAGE_SLOT_ID):
         """Stop learning of a infrared command."""
         return self.send("end_ir_learn", [slot])
 
-    def send_ir_code(self, command: str):
+    @command(
+        click.argument("model", type=str),
+        click.argument("code", type=str),
+        default_output=format_output("Sending the supplied infrared command")
+    )
+    def send_ir_code(self, model: str, code: str, slot: int=0):
         """Play a captured command.
 
-        :param str command: Command to execute"""
-        return self.send("send_ir_code", [str(command)])
+        :param str model: Air condition model
+        :param str code: Command to execute
+        :param int slot: Unknown internal register or slot
+        """
+        try:
+            model = bytes.fromhex(model)
+        except ValueError:
+            raise AirConditioningCompanionException(
+                "Invalid model. A hexadecimal string must be provided")
 
+        try:
+            code = bytes.fromhex(code)
+        except ValueError:
+            raise AirConditioningCompanionException(
+                "Invalid code. A hexadecimal string must be provided")
+
+        if slot < 0 or slot > 134:
+            raise AirConditioningCompanionException("Invalid slot: %s" % slot)
+
+        slot = bytes([121 + slot])
+
+        # FE + 0487 + 00007145 + 9470 + 1FFF + 7F + FF + 06 + 0042 + 27 + 4E + 0025002D008500AC01...
+        command = code[0:1] + model[2:8] + b'\x94\x70\x1F\xFF' + \
+            slot + b'\xFF' + code[13:16] + b'\x27'
+
+        checksum = sum(command) & 0xFF
+        command = command + bytes([checksum]) + code[18:]
+
+        return self.send("send_ir_code", [command.hex().upper()])
+
+    @command(
+        click.argument("command", type=str),
+        default_output=format_output("Sending a command to the air conditioner")
+    )
     def send_command(self, command: str):
         """Send a command to the air conditioner.
 
         :param str command: Command to execute"""
         return self.send("send_cmd", [str(command)])
 
+    @command(
+        click.argument("model", type=str),
+        click.argument("power", type=EnumType(Power, False)),
+        click.argument("operation_mode", type=EnumType(OperationMode, False)),
+        click.argument("target_temperature", type=int),
+        click.argument("fan_speed", type=EnumType(FanSpeed, False)),
+        click.argument("swing_mode", type=EnumType(SwingMode, False)),
+        click.argument("led", type=EnumType(Led, False)),
+        default_output=format_output(
+            "Sending a configuration to the air conditioner")
+    )
     def send_configuration(self, model: str, power: Power,
                            operation_mode: OperationMode,
-                           target_temperature: float, fan_speed: FanSpeed,
+                           target_temperature: int, fan_speed: FanSpeed,
                            swing_mode: SwingMode, led: Led):
 
         prefix = str(model[0:2] + model[8:16])
@@ -230,20 +392,16 @@ class AirConditioningCompanion(Device):
         configuration = configuration.replace('[mo]', str(operation_mode.value))
         configuration = configuration.replace('[wi]', str(fan_speed.value))
         configuration = configuration.replace('[sw]', str(swing_mode.value))
-        configuration = configuration.replace(
-            '[tt]', hex(int(target_temperature))[2:])
+        configuration = configuration.replace('[tt]', format(target_temperature, 'X'))
         configuration = configuration.replace('[li]', str(led.value))
 
-        temperature = (1 + int(target_temperature) - 17) % 16
-        temperature = hex(temperature)[2:].upper()
+        temperature = format((1 + target_temperature - 17) % 16, 'X')
         configuration = configuration.replace('[tt1]', temperature)
 
-        temperature = (4 + int(target_temperature) - 17) % 16
-        temperature = hex(temperature)[2:].upper()
+        temperature = format((4 + target_temperature - 17) % 16, 'X')
         configuration = configuration.replace('[tt4]', temperature)
 
-        temperature = (7 + int(target_temperature) - 17) % 16
-        temperature = hex(temperature)[2:].upper()
+        temperature = format((7 + target_temperature - 17) % 16, 'X')
         configuration = configuration.replace('[tt7]', temperature)
 
         configuration = configuration + suffix

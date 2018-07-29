@@ -40,6 +40,8 @@ setup(
 
     packages=["miio", "mirobo"],
 
+    include_package_data=True,
+
     python_requires='>=3.5',
 
     install_requires=[
@@ -61,7 +63,8 @@ setup(
             'miplug=miio.plug_cli:cli',
             'miceil=miio.ceil_cli:cli',
             'mieye=miio.philips_eyecare_cli:cli',
-            'miio-extract-tokens=miio.extract_tokens:main'
+            'miio-extract-tokens=miio.extract_tokens:main',
+            'miiocli=miio.cli:create_cli',
         ],
     },
 )

@@ -1,7 +1,8 @@
 # -*- coding: UTF-8 -*#
 from datetime import datetime, timedelta, time
-from typing import Any, Dict, List
 from enum import IntEnum
+from typing import Any, Dict, List
+
 from .utils import deprecated, pretty_time, pretty_seconds
 
 
@@ -146,6 +147,9 @@ class VacuumStatus:
         s += "cleaned %s m² in %s>" % (self.clean_area, self.clean_time)
         return s
 
+    def __json__(self):
+        return self.data
+
 
 class CleaningSummary:
     """Contains summarized information about available cleaning runs."""
@@ -184,6 +188,9 @@ class CleaningSummary:
             self.total_duration,
             self.total_area,
             self.ids)
+
+    def __json__(self):
+        return self.data
 
 
 class CleaningDetails:
@@ -234,6 +241,9 @@ class CleaningDetails:
         return "<CleaningDetails: %s (duration: %s, done: %s), area: %s>" % (
             self.start, self.duration, self.complete, self.area
         )
+
+    def __json__(self):
+        return self.data
 
 
 class ConsumableStatus:
@@ -300,6 +310,9 @@ class ConsumableStatus:
         return "<ConsumableStatus main: %s, side: %s, filter: %s, sensor dirty: %s>" % (  # noqa: E501
             self.main_brush, self.side_brush, self.filter, self.sensor_dirty)
 
+    def __json__(self):
+        return self.data
+
 
 class DNDStatus:
     """A container for the do-not-disturb status."""
@@ -330,6 +343,9 @@ class DNDStatus:
             self.enabled,
             self.start,
             self.end)
+
+    def __json__(self):
+        return self.data
 
 
 class Timer:
@@ -373,6 +389,9 @@ class Timer:
         return "<Timer %s: %s - enabled: %s - cron: %s>" % (self.id, self.ts,
                                                             self.enabled, self.cron)
 
+    def __json__(self):
+        return self.data
+
 
 class SoundStatus:
     """Container for sound status."""
@@ -392,6 +411,9 @@ class SoundStatus:
         return "<SoundStatus current: %s installing: %s>" % (
             self.current,
             self.being_installed)
+
+    def __json__(self):
+        return self.data
 
 
 class SoundInstallState(IntEnum):
@@ -443,10 +465,54 @@ class SoundInstallStatus:
 
     @property
     def is_errored(self) -> bool:
-        """True if the state has an error, use `error`to access it."""
+        """True if the state has an error, use `error` to access it."""
         return self.state == SoundInstallState.Error
 
     def __repr__(self) -> str:
         return "<SoundInstallStatus sid: %s (state: %s, error: %s)" \
                " - progress: %s>" % (self.sid, self.state,
                                      self.error, self.progress)
+
+    def __json__(self):
+        return self.data
+
+
+class CarpetModeStatus:
+    """Container for carpet mode status."""
+    def __init__(self, data):
+        # {'current_high': 500, 'enable': 1, 'current_integral': 450,
+        #  'current_low': 400, 'stall_time': 10}
+        self.data = data
+
+    @property
+    def enabled(self) -> bool:
+        """True if carpet mode is enabled."""
+        return self.data['enable'] == 1
+
+    @property
+    def stall_time(self) -> int:
+        return self.data['stall_time']
+
+    @property
+    def current_low(self) -> int:
+        return self.data['current_low']
+
+    @property
+    def current_high(self) -> int:
+        return self.data['current_high']
+
+    @property
+    def current_integral(self) -> int:
+        return self.data['current_integral']
+
+    def __repr__(self):
+        return "<CarpetModeStatus enabled=%s, " \
+               "stall_time: %s, " \
+               "current (low, high, integral): (%s, %s, %s)>" % (self.enabled,
+                                                                 self.stall_time,
+                                                                 self.current_low,
+                                                                 self.current_high,
+                                                                 self.current_integral)
+
+    def __json__(self):
+        return self.data
